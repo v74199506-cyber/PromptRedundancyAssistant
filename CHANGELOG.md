@@ -1,6 +1,30 @@
 # Changelog
 
+## 2.1.0 - 2026-08-02
+
+- Added a ten-entry per-field undo history for applied cleanup.
+- Added explainable score components for exact duplicates, overlapping meaning, and repeated words.
+- Added General, SDXL, Pony, Illustrious, and Flux analysis profiles.
+- Added user-configurable ignored terms.
+- Added positive/negative prompt role detection; semantic cleanup is conservative for negative prompts.
+- Resolves DOM-backed text widgets to their owning node when possible so negative-role detection also works in the typing helper.
+- Added an explicitly approximate token-length indicator and profile-specific warnings.
+- Added syntax-aware top-level parsing that preserves weighted groups, wildcards, LoRA tags, embeddings, and control tokens.
+- Expanded the semantic dictionary with a conservative lighting group.
+- Added package and publication metadata tests.
+- Set the Comfy Registry publisher ID to `v74199506-cyber`.
+- Kept the extension frontend-only, dependency-free, local, and user-controlled.
+
 All notable changes use semantic versioning.
+
+## 2.0.1 - 2026-08-02
+
+- Fixed copying in browsers that deny the modern Clipboard API by adding a local fallback.
+- Replaced the misleading exact-only action with **Apply optimized prompt**.
+- Added conservative removal of later standalone tags from the same semantic group.
+- Added an optimized-prompt preview and visible copy/apply status messages.
+- Re-analyzes immediately after applying and displays the score transition.
+- Updated repository links to `v74199506-cyber/PromptRedundancyAssistant`.
 
 ## 2.0.0 - 2026-08-01
 

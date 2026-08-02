@@ -1,22 +1,26 @@
 # Prompt Redundancy Assistant for ComfyUI
 
-An always-on, lightweight ComfyUI frontend extension that watches prompt fields, detects unnecessary repetition, and offers contextual suggestions without adding a node to the workflow.
+An always-on, lightweight prompt linter for ComfyUI. It watches editable prompt fields, highlights unnecessary repetition, explains its redundancy score, and offers conservative cleanup without adding a node to the workflow.
 
-It stays out of the way until it finds something useful. There are no visible workflow nodes, API calls, telemetry, model downloads, or third-party runtime dependencies.
+There are no API calls, telemetry, model downloads, visible workflow nodes, or third-party runtime dependencies. Analysis happens locally in the browser and a prompt changes only after the user clicks **Apply optimized prompt**.
 
-## What it does
+## Features
 
 - Watches likely prompt and multiline text widgets across ComfyUI nodes.
-- Adds a small `✦ score` badge only to nodes whose editable prompt contains redundancy.
-- Shows a discreet `Prompt help` pill while you edit a redundant multiline prompt.
-- Opens a contextual panel with highlighted terms and practical suggestions.
-- Offers user-initiated buttons to copy a cleaned prompt or remove exact duplicates.
-- Never rewrites or changes a prompt automatically.
-- Works with positive prompts, negative prompts, CLIP text nodes, primitive strings, and prompt fields provided by many custom nodes.
+- Adds a small issue badge only when editable text contains known redundancy.
+- Highlights exact duplicates, conservative meaning overlap, and repeated words.
+- Explains the score as separate exact, meaning, and repeated-word components.
+- Offers a cleaned preview, clipboard copy, direct apply, and **Undo last apply**.
+- Keeps up to ten previous applied values per prompt field for the current browser session.
+- Preserves weighted groups, LoRA tags, embeddings, wildcards, and ComfyUI control syntax.
+- Detects likely positive and negative prompt fields and avoids semantic cleanup of negative prompts.
+- Includes General, SDXL, Pony, Illustrious, and Flux analysis profiles.
+- Supports a custom comma-separated ignored-term list.
+- Shows an optional, explicitly approximate prompt token count.
 
 Highlight colors:
 
-- Yellow: an exact repeated comma-separated concept.
+- Yellow: an exact repeated top-level concept.
 - Purple: conservative meaning overlap, such as `masterpiece` with `best quality`.
 - Blue: an ordinary word repeated at least the configured number of times.
 
@@ -25,22 +29,22 @@ Highlight colors:
 From `ComfyUI/custom_nodes`:
 
 ```bash
-git clone https://github.com/v74199506-cyber/ComfyUI-Prompt-Redundancy-Highlighter.git
+git clone https://github.com/v74199506-cyber/PromptRedundancyAssistant.git
 ```
 
 Restart ComfyUI and refresh the browser. Nothing needs to be added to the canvas.
 
-For a ZIP installation, extract the repository directly inside `ComfyUI/custom_nodes`. The resulting folder must contain `__init__.py` and `web` directly, without an additional nested repository folder.
+For a ZIP installation, extract the repository directly inside `ComfyUI/custom_nodes`. The resulting folder must contain `__init__.py` and `web` directly, without an extra nested repository folder.
 
 ## Usage
 
-Continue building workflows normally. When an editable prompt has a meaningful repetition:
+Continue building workflows normally. When an editable prompt contains a known repetition:
 
-1. A small score appears in the title area of that node.
-2. Click the score to inspect the highlighted prompt and suggestions.
-3. Optionally copy the cleaned version or remove only exact duplicate concepts.
-
-While editing a multiline text box, the contextual helper appears near the field when an issue is detected.
+1. Click the small score badge in the node title area, or the contextual helper beside a multiline field.
+2. Review the highlighted prompt, score components, model profile, role, and suggestions.
+3. Expand the optimized preview.
+4. Copy it or apply it to the current field.
+5. Use **Undo last apply** if the change is not useful.
 
 Example:
 
@@ -48,37 +52,98 @@ Example:
 masterpiece, best quality, portrait, portrait, highly detailed, ultra detailed, soft window light
 ```
 
-The assistant identifies the repeated `portrait`, suggests choosing fewer overlapping quality/detail terms, and offers this exact-duplicate cleanup:
+Conservative result under the General/SDXL profile:
 
 ```text
-masterpiece, best quality, portrait, highly detailed, ultra detailed, soft window light
+masterpiece, portrait, highly detailed, soft window light
 ```
 
-Semantic terms are suggestions only. They are never removed automatically.
+Semantic cleanup removes only later isolated tags from a known group. Descriptive phrases and protected ComfyUI syntax remain unchanged.
 
 ## Settings
 
 Open ComfyUI Settings and search for `PromptRedundancyAssistant` or `Prompt Assistant`.
 
-Available settings:
+- **Enable invisible prompt assistant**
+- **Show issue badges on prompt nodes**
+- **Show contextual help while typing**
+- **Detect overlapping meaning groups**
+- **Repeated-word threshold** (2 to 10)
+- **Prompt model profile** (`general`, `sdxl`, `pony`, `illustrious`, or `flux`)
+- **Ignored terms** (comma separated)
+- **Show approximate token count**
 
-- Enable invisible prompt assistant.
-- Show issue badges on prompt nodes.
-- Show contextual help while typing.
-- Detect overlapping meaning groups.
-- Repeated-word threshold, from 2 to 10.
+Pony and Illustrious profiles deliberately preserve quality-tag combinations because those model families may depend on them. Flux uses a larger length-warning threshold and reminds users that many Flux workflows use a short or empty negative prompt. These are conservative profiles, not automatic checkpoint detection.
 
-The extension itself can also be disabled from ComfyUI's Extensions settings panel. A page reload may be required after disabling or enabling a frontend extension.
+## Score meaning
+
+The displayed value is a **redundancy score**, not an image-quality score:
+
+- 20 points per later exact duplicate.
+- 12 points per additional term from a known semantic group.
+- 3 points per repeated-word excess above the configured threshold.
+- Total capped at 100.
+
+A score of zero means only that no configured redundancy rule fired. It does not guarantee a better prompt or image.
+
+## Protected syntax
+
+Cleanup splits only at top-level commas, semicolons, and newlines. It preserves structures such as:
+
+```text
+(character, red hair, green eyes:1.2)
+{red dress|blue dress}
+<lora:model:0.8>
+embedding:my_embedding
+BREAK
+```
+
+Duplicate protected control segments are reported conservatively or left unchanged rather than automatically removed.
 
 ## Important limitations
 
-- The assistant can inspect editable widget text. It cannot see a prompt that exists only at runtime, such as an LLM-generated string arriving through a connection, until that text is displayed in an editable widget.
-- Suggestions are general prompt-quality guidance. The checkpoint author's prompting recommendations should take priority.
-- Repetition can be intentional. Cleanup is always initiated by the user.
-- Version 2.0 is frontend-only. It intentionally registers no workflow node.
+- The extension can inspect editable widget text. It cannot see a value that exists only at runtime, such as an LLM-generated STRING arriving through a connection, until that value appears in an editable widget.
+- Semantic groups are small, static English dictionaries. Add legitimate trigger words to the ignored-term setting when necessary.
+- The token count is a rough cross-tokenizer estimate. The tokenizer used by the selected model is authoritative.
+- Model profiles are selected manually and do not inspect checkpoint internals.
+- Repetition may be intentional. The checkpoint or LoRA author's recommendations take priority.
+- Version 2.x is frontend-only and intentionally registers no workflow node.
 
 ## Privacy and performance
 
-Analysis runs locally in the browser with small deterministic JavaScript rules. The extension does not send text anywhere, load an AI model, inspect saved images, or change workflow execution.
+Analysis uses deterministic JavaScript in the browser. The extension does not send prompts anywhere, load an AI model, inspect saved images, or alter workflow execution. Results are cached per node, prompt value, and analysis settings.
 
-Results are cached per node and prompt value so unchanged prompts are not repeatedly re-analyzed.
+## Development and tests
+
+The runtime has no npm or Python dependencies. Node.js is used only for development tests:
+
+```bash
+npm test
+```
+
+The test suite covers cleanup behavior, protected syntax, ignored terms, model profiles, negative prompts, score breakdown, HTML escaping, and Registry metadata.
+
+## Publishing
+
+Registry metadata is already configured with:
+
+```toml
+[tool.comfy]
+PublisherId = "v74199506-cyber"
+DisplayName = "Prompt Redundancy Assistant"
+```
+
+The `@` shown by the Registry UI is a visual prefix. The official metadata value uses the identifier after `@`, without the symbol.
+
+Before publishing:
+
+1. Make the GitHub repository public.
+2. Commit and push version `2.1.0`.
+3. Add the Registry API key as the GitHub Actions secret `REGISTRY_ACCESS_TOKEN`.
+4. Open Actions and manually run **Publish to Comfy Registry**.
+
+See [PUBLISHING.md](PUBLISHING.md) and the [official ComfyUI publishing documentation](https://docs.comfy.org/registry/publishing).
+
+## License
+
+MIT - see [LICENSE](LICENSE).

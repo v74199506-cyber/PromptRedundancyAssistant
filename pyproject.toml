@@ -1,7 +1,7 @@
 [project]
-name = "prompt-redundancy-highlighter"
-version = "2.0.0"
-description = "An always-on ComfyUI frontend assistant that detects redundant prompt terms and offers contextual suggestions."
+name = "prompt-redundancy-assistant"
+version = "2.1.0"
+description = "An always-on, local ComfyUI prompt linter that highlights redundancy and offers conservative cleanup suggestions."
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 dependencies = []
@@ -10,10 +10,10 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/v74199506-cyber/ComfyUI-Prompt-Redundancy-Highlighter"
-Documentation = "https://github.com/v74199506-cyber/ComfyUI-Prompt-Redundancy-Highlighter#readme"
-"Bug Tracker" = "https://github.com/v74199506-cyber/ComfyUI-Prompt-Redundancy-Highlighter/issues"
+Repository = "https://github.com/v74199506-cyber/PromptRedundancyAssistant"
+Documentation = "https://github.com/v74199506-cyber/PromptRedundancyAssistant#readme"
+"Bug Tracker" = "https://github.com/v74199506-cyber/PromptRedundancyAssistant/issues"
 
 [tool.comfy]
-PublisherId = "YOUR_COMFY_PUBLISHER_ID"
+PublisherId = "v74199506-cyber"
 DisplayName = "Prompt Redundancy Assistant"
