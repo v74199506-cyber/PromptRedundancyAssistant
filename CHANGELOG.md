@@ -11,8 +11,7 @@
 - Added an explicitly approximate token-length indicator and profile-specific warnings.
 - Added syntax-aware top-level parsing that preserves weighted groups, wildcards, LoRA tags, embeddings, and control tokens.
 - Expanded the semantic dictionary with a conservative lighting group.
-- Added package and publication metadata tests.
-- Set the Comfy Registry publisher ID to `v74199506-cyber`.
+- Added package metadata tests.
 - Kept the extension frontend-only, dependency-free, local, and user-controlled.
 
 All notable changes use semantic versioning.

@@ -121,28 +121,7 @@ The runtime has no npm or Python dependencies. Node.js is used only for developm
 npm test
 ```
 
-The test suite covers cleanup behavior, protected syntax, ignored terms, model profiles, negative prompts, score breakdown, HTML escaping, and Registry metadata.
-
-## Publishing
-
-Registry metadata is already configured with:
-
-```toml
-[tool.comfy]
-PublisherId = "v74199506-cyber"
-DisplayName = "Prompt Redundancy Assistant"
-```
-
-The `@` shown by the Registry UI is a visual prefix. The official metadata value uses the identifier after `@`, without the symbol.
-
-Before publishing:
-
-1. Make the GitHub repository public.
-2. Commit and push version `2.1.0`.
-3. Add the Registry API key as the GitHub Actions secret `REGISTRY_ACCESS_TOKEN`.
-4. Open Actions and manually run **Publish to Comfy Registry**.
-
-See [PUBLISHING.md](PUBLISHING.md) and the [official ComfyUI publishing documentation](https://docs.comfy.org/registry/publishing).
+The test suite covers cleanup behavior, protected syntax, ignored terms, model profiles, negative prompts, score breakdown, HTML escaping, and package metadata.
 
 ## License
 
