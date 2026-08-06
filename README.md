@@ -11,6 +11,7 @@ There are no API calls, telemetry, model downloads, visible workflow nodes, or t
 - Highlights exact duplicates, conservative meaning overlap, and repeated words.
 - Explains the score as separate exact, meaning, and repeated-word components.
 - Offers a cleaned preview, clipboard copy, direct apply, and **Undo last apply**.
+- Preserves paragraph organization when applying an optimized prompt.
 - Converts tag lists into compact natural-language captions and captions back into concise tags.
 - Detects the current prompt format and always previews a conversion before applying it.
 - Keeps up to ten previous applied values per prompt field for the current browser session.
@@ -82,6 +83,8 @@ masterpiece, portrait, highly detailed, soft window light
 ```
 
 Semantic cleanup removes only later isolated tags from a known group. Descriptive phrases and protected ComfyUI syntax remain unchanged.
+
+Paragraphs and line breaks are retained, so prompts organized into subject, appearance, clothing, pose, environment, and style blocks remain organized after cleanup.
 
 ## Settings
 

@@ -142,3 +142,29 @@ test("format conversion preserves model-control syntax verbatim", () => {
     assert.equal(tags.includes(control), true);
   });
 });
+
+test("optimization preserves paragraph organization", () => {
+  const prompt = [
+    "Moni, black hair, black hair, purple eyes",
+    "",
+    "black dress, black dress, gold choker",
+    "",
+    "rainy street, cinematic lighting",
+  ].join("\n");
+  const result = analyzePrompt(prompt);
+  assert.equal(result.optimizedPrompt, [
+    "Moni, black hair, purple eyes",
+    "",
+    "black dress, gold choker",
+    "",
+    "rainy street, cinematic lighting",
+  ].join("\n"));
+});
+
+test("optimization preserves Windows line endings", () => {
+  const prompt = "Moni, portrait, portrait\r\nblack dress\r\nrainy street";
+  assert.equal(
+    analyzePrompt(prompt).optimizedPrompt,
+    "Moni, portrait\r\nblack dress\r\nrainy street",
+  );
+});

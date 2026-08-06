@@ -288,10 +288,14 @@ function optimizeSegments(segments, exact, semantic, ignored) {
   const keptSemanticGroups = new Set();
   const removedExact = [];
   const removedSemantic = [];
+  const keptIndexes = new Set();
 
-  const optimized = segments.filter((segment) => {
+  const optimized = segments.filter((segment, index) => {
     const normalized = normalizeSegment(segment);
-    if (ignored.has(normalized) || isProtectedControlSegment(segment)) return true;
+    if (ignored.has(normalized) || isProtectedControlSegment(segment)) {
+      keptIndexes.add(index);
+      return true;
+    }
     if (exactTerms.has(normalized)) {
       if (seenExact.has(normalized)) {
         removedExact.push(segment);
@@ -309,10 +313,52 @@ function optimizeSegments(segments, exact, semantic, ignored) {
       }
       keptSemanticGroups.add(group);
     }
+    keptIndexes.add(index);
     return true;
   });
 
-  return { optimized, removedExact, removedSemantic };
+  return { optimized, keptIndexes, removedExact, removedSemantic };
+}
+
+function splitTopLevelParagraphs(prompt) {
+  const source = String(prompt || "");
+  const paragraphs = [];
+  const depth = { "(": 0, "[": 0, "{": 0, "<": 0 };
+  const openerFor = { ")": "(", "]": "[", "}": "{", ">": "<" };
+  let current = "";
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (Object.hasOwn(depth, character)) depth[character] += 1;
+    else if (Object.hasOwn(openerFor, character)) {
+      const opener = openerFor[character];
+      depth[opener] = Math.max(0, depth[opener] - 1);
+    }
+
+    const topLevel = Object.values(depth).every((value) => value === 0);
+    if (topLevel && (character === "\n" || character === "\r")) {
+      const lineBreak = character === "\r" && source[index + 1] === "\n" ? "\r\n" : character;
+      if (lineBreak === "\r\n") index += 1;
+      paragraphs.push({ text: current, lineBreak });
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+  paragraphs.push({ text: current, lineBreak: "" });
+  return paragraphs;
+}
+
+function rebuildOptimizedPrompt(prompt, keptIndexes) {
+  let segmentIndex = 0;
+  return splitTopLevelParagraphs(prompt).map(({ text, lineBreak }) => {
+    const kept = [];
+    splitPromptSegments(text).forEach((segment) => {
+      if (keptIndexes.has(segmentIndex)) kept.push(segment);
+      segmentIndex += 1;
+    });
+    return `${kept.join(", ")}${lineBreak}`;
+  }).join("");
 }
 
 export function analyzePrompt(prompt, options = {}) {
@@ -357,6 +403,7 @@ export function analyzePrompt(prompt, options = {}) {
     .map(([word, count]) => ({ word, count }));
 
   const optimization = optimizeSegments(segments, exact, semantic, ignored);
+  const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes);
   const duplicateInstances = exact.reduce((total, item) => total + item.count - 1, 0);
   const semanticExcess = semantic.reduce((total, item) => total + item.terms.length - 1, 0);
   const wordExcess = repeatedWords.reduce((total, item) => total + item.count - minimumWordRepetitions + 1, 0);
@@ -389,8 +436,8 @@ export function analyzePrompt(prompt, options = {}) {
     exact,
     semantic,
     repeatedWords,
-    cleanedPrompt: optimization.optimized.join(", "),
-    optimizedPrompt: optimization.optimized.join(", "),
+    cleanedPrompt: optimizedPrompt,
+    optimizedPrompt,
     removedExact: optimization.removedExact,
     removedSemantic: optimization.removedSemantic,
     score,

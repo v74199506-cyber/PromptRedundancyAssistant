@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.2 - 2026-08-06
+
+- Prompt optimization now preserves the user's paragraph and line-break organization.
+- Duplicate and redundant tags are removed in place without flattening character, clothing, pose, environment, and style blocks into one line.
+- Added regression coverage for blank lines and Windows `CRLF` formatting.
+
 ## 2.2.1 - 2026-08-05
 
 - Fixed **Undo last apply** restoring a stale or whitespace-normalized widget value after format conversion.
