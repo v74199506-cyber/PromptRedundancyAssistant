@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0 - 2026-08-05
+
+- Added an offline, deterministic **Tags → Caption** converter.
+- Added an offline, deterministic **Caption → Tags** converter.
+- Added automatic prompt-format detection and a visible format indicator.
+- Added conversion preview, copy, apply, and undo support without changing prompts automatically.
+- Added an optional blue conversion badge to clean prompt nodes, so the assistant remains accessible even when no redundancy is detected.
+- Preserved LoRA references, weighted groups, embeddings, wildcards, and control syntax during conversion.
+- Added converter regression tests and updated the documentation.
+
 ## 2.1.0 - 2026-08-02
 
 - Added a ten-entry per-field undo history for applied cleanup.

@@ -11,6 +11,8 @@ There are no API calls, telemetry, model downloads, visible workflow nodes, or t
 - Highlights exact duplicates, conservative meaning overlap, and repeated words.
 - Explains the score as separate exact, meaning, and repeated-word components.
 - Offers a cleaned preview, clipboard copy, direct apply, and **Undo last apply**.
+- Converts tag lists into compact natural-language captions and captions back into concise tags.
+- Detects the current prompt format and always previews a conversion before applying it.
 - Keeps up to ten previous applied values per prompt field for the current browser session.
 - Preserves weighted groups, LoRA tags, embeddings, wildcards, and ComfyUI control syntax.
 - Detects likely positive and negative prompt fields and avoids semantic cleanup of negative prompts.
@@ -46,6 +48,27 @@ Continue building workflows normally. When an editable prompt contains a known r
 4. Copy it or apply it to the current field.
 5. Use **Undo last apply** if the change is not useful.
 
+### Tags and caption converter
+
+The assistant is also available on clean prompt fields through the small blue **↔** badge. Open it and choose:
+
+- **Tags → Caption** to turn comma-separated tags into structured natural-language art direction.
+- **Caption → Tags** to extract concise comma-separated concepts from prose.
+
+Review the conversion preview, then copy it or click **Apply conversion**. Applying a conversion uses the same session undo history as prompt cleanup. Conversion is deterministic and local; it does not contact an LLM or external service.
+
+Example tags:
+
+```text
+Moni, very long black hair, purple eyes, black dress, sitting, rainy street, cinematic lighting
+```
+
+Example caption:
+
+```text
+Create an image of Moni. The subject has very long black hair and purple eyes. The subject is wearing a black dress. Show the subject sitting. Set the scene on a rainy street. Use cinematic lighting.
+```
+
 Example:
 
 ```text
@@ -66,6 +89,7 @@ Open ComfyUI Settings and search for `PromptRedundancyAssistant` or `Prompt Assi
 
 - **Enable invisible prompt assistant**
 - **Show issue badges on prompt nodes**
+- **Show converter button on clean prompt nodes**
 - **Show contextual help while typing**
 - **Detect overlapping meaning groups**
 - **Repeated-word threshold** (2 to 10)
@@ -104,6 +128,7 @@ Duplicate protected control segments are reported conservatively or left unchang
 
 - The extension can inspect editable widget text. It cannot see a value that exists only at runtime, such as an LLM-generated STRING arriving through a connection, until that value appears in an editable widget.
 - Semantic groups are small, static English dictionaries. Add legitimate trigger words to the ignored-term setting when necessary.
+- Tags/caption conversion is heuristic and English-oriented. It reorganizes prompt concepts but does not replace an LLM translator or guarantee identical model output.
 - The token count is a rough cross-tokenizer estimate. The tokenizer used by the selected model is authoritative.
 - Model profiles are selected manually and do not inspect checkpoint internals.
 - Repetition may be intentional. The checkpoint or LoRA author's recommendations take priority.

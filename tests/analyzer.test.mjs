@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzePrompt, estimatePromptTokens, highlightedPromptHtml, splitPromptSegments } from "../web/js/analyzer.js";
+import {
+  analyzePrompt,
+  captionToTags,
+  detectPromptFormat,
+  estimatePromptTokens,
+  highlightedPromptHtml,
+  splitPromptSegments,
+  tagsToCaption,
+} from "../web/js/analyzer.js";
 
 test("removes only later exact concepts", () => {
   const result = analyzePrompt("portrait, soft light, portrait, blue eyes");
@@ -99,4 +107,38 @@ test("score includes an explainable breakdown", () => {
 test("reports a conservative token estimate", () => {
   assert.equal(estimatePromptTokens(""), 0);
   assert.ok(estimatePromptTokens("a cinematic portrait with soft light") >= 6);
+});
+
+test("detects tag and caption prompt formats", () => {
+  assert.equal(detectPromptFormat("Moni, purple eyes, black dress, sitting, rainy street"), "tags");
+  assert.equal(detectPromptFormat("Moni is sitting outside in the rain. She is wearing a black dress."), "caption");
+  assert.equal(detectPromptFormat(""), "empty");
+});
+
+test("converts tags into structured natural-language art direction", () => {
+  const result = tagsToCaption("masterpiece, Moni, purple_eyes, black dress, sitting, close-up, rainy street, cinematic lighting");
+  assert.match(result, /Create an image of Moni\./);
+  assert.match(result, /purple eyes/);
+  assert.match(result, /wearing black dress/);
+  assert.match(result, /rainy street/);
+  assert.match(result, /masterpiece/);
+});
+
+test("converts caption prose into concise comma-separated tags", () => {
+  const result = captionToTags("Moni has purple eyes and long black hair. She is wearing a black dress while sitting outside in the rain. Use cinematic lighting.");
+  assert.match(result, /Moni has purple eyes/);
+  assert.match(result, /long black hair/);
+  assert.match(result, /black dress/);
+  assert.match(result, /sitting outside in rain/);
+  assert.match(result, /cinematic lighting/);
+});
+
+test("format conversion preserves model-control syntax verbatim", () => {
+  const controls = ["<lora:cherry:0.8>", "(purple_eyes:1.2)", "__location__", "BREAK"];
+  const caption = tagsToCaption(`${controls.join(", ")}, Moni, portrait`);
+  const tags = captionToTags(`${controls.join(" ")} Moni is standing in a studio.`);
+  controls.forEach((control) => {
+    assert.equal(caption.includes(control), true);
+    assert.equal(tags.includes(control), true);
+  });
 });
