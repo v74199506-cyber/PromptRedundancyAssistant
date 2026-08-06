@@ -103,17 +103,29 @@ function ensurePanel() {
   return panel;
 }
 
+function textElementFor(context) {
+  const candidates = [context.element, context.widget?.inputEl, context.widget?.element];
+  return candidates.find((candidate) => candidate && typeof candidate.value === "string") || null;
+}
+
 function setWidgetValue(context, value) {
+  const exactValue = String(value ?? "");
+  const element = textElementFor(context);
+  if (element) element.value = exactValue;
   if (context.widget) {
-    context.widget.value = value;
-    context.widget.callback?.(value);
-    app.canvas?.setDirty?.(true, true);
+    context.widget.value = exactValue;
+    context.widget.callback?.(exactValue);
   }
-  if (context.element) {
-    context.element.value = value;
-    context.element.dispatchEvent(new Event("input", { bubbles: true }));
-    context.element.dispatchEvent(new Event("change", { bubbles: true }));
+  if (element) {
+    // Some ComfyUI widgets synchronize through DOM events; dispatch both, then
+    // enforce the stored string again in case a callback normalized whitespace.
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+    element.value = exactValue;
   }
+  if (context.widget) context.widget.value = exactValue;
+  if (context.node) cache.delete(context.node);
+  app.canvas?.setDirty?.(true, true);
 }
 
 function historyTarget(context) {
@@ -139,8 +151,11 @@ function restorePrompt(context) {
 }
 
 function contextPrompt(context) {
+  // The visible editor can be newer than widget.value while the user is typing.
+  // Prefer it so undo captures formatting exactly as the user saw it.
+  const element = textElementFor(context);
+  if (element) return element.value;
   if (context.widget && typeof context.widget.value === "string") return context.widget.value;
-  if (context.element && typeof context.element.value === "string") return context.element.value;
   return context.analysis?.prompt || "";
 }
 
@@ -226,7 +241,9 @@ function showPanel(context, statusMessage = "") {
   });
   container.querySelector('[data-action="undo"]').addEventListener("click", () => {
     const restored = restorePrompt(activeContext);
-    showPanel(activeContext, restored === null ? "Nothing to restore." : "Previous prompt restored.");
+    showPanel(activeContext, restored === null
+      ? "Nothing to restore."
+      : `Previous prompt restored exactly (${detectPromptFormat(restored)} format).`);
   });
   container.querySelector('[data-action="copy"]').addEventListener("click", async () => {
     const button = container.querySelector('[data-action="copy"]');

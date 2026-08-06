@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1 - 2026-08-05
+
+- Fixed **Undo last apply** restoring a stale or whitespace-normalized widget value after format conversion.
+- The visible text editor is now the primary source for history snapshots.
+- Restoration synchronizes both the ComfyUI widget and its text editor while preserving the original string exactly.
+
 ## 2.2.0 - 2026-08-05
 
 - Added an offline, deterministic **Tags → Caption** converter.
