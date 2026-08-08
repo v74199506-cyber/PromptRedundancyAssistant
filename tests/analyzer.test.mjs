@@ -100,8 +100,31 @@ test("Pony and Illustrious profiles preserve quality tags", () => {
 
 test("score includes an explainable breakdown", () => {
   const result = analyzePrompt("portrait, portrait, masterpiece, best quality");
-  assert.deepEqual(result.scoreBreakdown, { exact: 20, semantic: 12, repeatedWords: 0 });
+  assert.deepEqual(result.scoreBreakdown, { exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0 });
   assert.equal(result.score, 32);
+});
+
+test("removes standalone creator handles while preserving paragraphs", () => {
+  const prompt = "Moni, black hair, @chxrrygxg\n\nblack dress, @another_creator\n\nrainy street";
+  const result = analyzePrompt(prompt);
+  assert.deepEqual(result.creatorTags, ["@chxrrygxg", "@another_creator"]);
+  assert.equal(result.scoreBreakdown.creatorTags, 20);
+  assert.equal(result.optimizedPrompt, "Moni, black hair\n\nblack dress\n\nrainy street");
+  assert.deepEqual(result.removedCreatorTags, ["@chxrrygxg", "@another_creator"]);
+});
+
+test("does not remove email addresses or creator mentions inside prose", () => {
+  const prompt = "contact@example.com, artwork inspired by @chxrrygxg";
+  const result = analyzePrompt(prompt);
+  assert.deepEqual(result.creatorTags, []);
+  assert.equal(result.optimizedPrompt, prompt);
+});
+
+test("repeated creator handles are not double-counted as exact duplicates", () => {
+  const result = analyzePrompt("Moni, @chxrrygxg, @chxrrygxg");
+  assert.deepEqual(result.exact, []);
+  assert.equal(result.scoreBreakdown.creatorTags, 20);
+  assert.equal(result.score, 20);
 });
 
 test("reports a conservative token estimate", () => {

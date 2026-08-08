@@ -77,6 +77,11 @@ function standaloneTagValue(segment) {
     .trim();
 }
 
+function creatorHandleValue(segment) {
+  const value = standaloneTagValue(segment);
+  return /^@[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9_])?$/i.test(value) ? value : "";
+}
+
 function isProtectedControlSegment(segment) {
   const value = String(segment || "").trim();
   return /^<[^>]+>$/.test(value)
@@ -288,6 +293,7 @@ function optimizeSegments(segments, exact, semantic, ignored) {
   const keptSemanticGroups = new Set();
   const removedExact = [];
   const removedSemantic = [];
+  const removedCreatorTags = [];
   const keptIndexes = new Set();
 
   const optimized = segments.filter((segment, index) => {
@@ -295,6 +301,10 @@ function optimizeSegments(segments, exact, semantic, ignored) {
     if (ignored.has(normalized) || isProtectedControlSegment(segment)) {
       keptIndexes.add(index);
       return true;
+    }
+    if (creatorHandleValue(segment)) {
+      removedCreatorTags.push(segment);
+      return false;
     }
     if (exactTerms.has(normalized)) {
       if (seenExact.has(normalized)) {
@@ -317,7 +327,7 @@ function optimizeSegments(segments, exact, semantic, ignored) {
     return true;
   });
 
-  return { optimized, keptIndexes, removedExact, removedSemantic };
+  return { optimized, keptIndexes, removedExact, removedSemantic, removedCreatorTags };
 }
 
 function splitTopLevelParagraphs(prompt) {
@@ -372,7 +382,7 @@ export function analyzePrompt(prompt, options = {}) {
   const normalized = segments.map(normalizeSegment);
   const counts = new Map();
   normalized.forEach((part, index) => {
-    if (!part || ignored.has(part) || isProtectedControlSegment(segments[index])) return;
+    if (!part || ignored.has(part) || isProtectedControlSegment(segments[index]) || creatorHandleValue(segments[index])) return;
     counts.set(part, (counts.get(part) || 0) + 1);
   });
 
@@ -401,6 +411,10 @@ export function analyzePrompt(prompt, options = {}) {
     .filter(([, count]) => count >= minimumWordRepetitions)
     .sort((a, b) => b[1] - a[1])
     .map(([word, count]) => ({ word, count }));
+  const creatorTags = segments
+    .filter((segment) => !ignored.has(normalizeSegment(segment)))
+    .map(creatorHandleValue)
+    .filter(Boolean);
 
   const optimization = optimizeSegments(segments, exact, semantic, ignored);
   const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes);
@@ -411,12 +425,14 @@ export function analyzePrompt(prompt, options = {}) {
     exact: duplicateInstances * 20,
     semantic: semanticExcess * 12,
     repeatedWords: wordExcess * 3,
+    creatorTags: creatorTags.length * 10,
   };
-  const score = Math.min(100, scoreBreakdown.exact + scoreBreakdown.semantic + scoreBreakdown.repeatedWords);
+  const score = Math.min(100, Object.values(scoreBreakdown).reduce((total, value) => total + value, 0));
   const tokenEstimate = estimatePromptTokens(prompt);
 
   const suggestions = [];
   if (exact.length) suggestions.push("Remove later copies of identical top-level concepts.");
+  if (creatorTags.length) suggestions.push(`Remove standalone creator handles: ${creatorTags.join(", ")}.`);
   semantic.forEach(({ group, terms }) => suggestions.push(`Choose one strong ${group} term instead of: ${terms.join(", ")}.`));
   if (segments.length > 35) suggestions.push("Shorten the prompt and prioritize subject, composition, lighting, and style.");
   if (!suggestions.length && repeatedWords.length) suggestions.push("Review repeated words and keep them only when repetition adds meaning.");
@@ -436,10 +452,12 @@ export function analyzePrompt(prompt, options = {}) {
     exact,
     semantic,
     repeatedWords,
+    creatorTags,
     cleanedPrompt: optimizedPrompt,
     optimizedPrompt,
     removedExact: optimization.removedExact,
     removedSemantic: optimization.removedSemantic,
+    removedCreatorTags: optimization.removedCreatorTags,
     score,
     scoreBreakdown,
     tokenEstimate,
@@ -462,11 +480,13 @@ export function highlightedPromptHtml(prompt, analysis) {
   const exactTerms = new Set(analysis.exact.map((item) => item.term));
   const semanticTerms = new Set(analysis.semantic.flatMap((item) => item.terms));
   const repeatedWords = new Set(analysis.repeatedWords.map((item) => item.word));
+  const creatorTags = new Set((analysis.creatorTags || []).map(normalizeSegment));
   const parts = String(prompt || "").split(/([,;\n]+)/);
 
   return parts.map((part, index) => {
     if (index % 2 === 1) return escapeHtml(part);
     const normalized = normalizeSegment(part);
+    if (creatorTags.has(standaloneTagValue(part))) return `<mark class="pra-creator">${escapeHtml(part)}</mark>`;
     if (normalized && exactTerms.has(normalized)) return `<mark class="pra-exact">${escapeHtml(part)}</mark>`;
     if ([...semanticTerms].some((term) => phraseIsPresent(normalized, term))) {
       return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;

@@ -1,6 +1,6 @@
 [project]
 name = "prompt-redundancy-assistant"
-version = "2.2.2"
+version = "2.2.3"
 description = "An always-on, local ComfyUI prompt linter that highlights redundancy and offers conservative cleanup suggestions."
 license = { file = "LICENSE" }
 requires-python = ">=3.9"

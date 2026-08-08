@@ -12,6 +12,7 @@ There are no API calls, telemetry, model downloads, visible workflow nodes, or t
 - Explains the score as separate exact, meaning, and repeated-word components.
 - Offers a cleaned preview, clipboard copy, direct apply, and **Undo last apply**.
 - Preserves paragraph organization when applying an optimized prompt.
+- Detects and removes standalone creator handles such as `@chxrrygxg` while leaving emails and prose mentions untouched.
 - Converts tag lists into compact natural-language captions and captions back into concise tags.
 - Detects the current prompt format and always previews a conversion before applying it.
 - Keeps up to ten previous applied values per prompt field for the current browser session.
@@ -26,6 +27,7 @@ Highlight colors:
 - Yellow: an exact repeated top-level concept.
 - Purple: conservative meaning overlap, such as `masterpiece` with `best quality`.
 - Blue: an ordinary word repeated at least the configured number of times.
+- Red: a standalone creator handle that will be removed by optimization.
 
 ## Installation
 
@@ -109,6 +111,7 @@ The displayed value is a **redundancy score**, not an image-quality score:
 - 20 points per later exact duplicate.
 - 12 points per additional term from a known semantic group.
 - 3 points per repeated-word excess above the configured threshold.
+- 10 points per standalone creator handle.
 - Total capped at 100.
 
 A score of zero means only that no configured redundancy rule fired. It does not guarantee a better prompt or image.

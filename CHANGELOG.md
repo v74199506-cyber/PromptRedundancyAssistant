@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.3 - 2026-08-07
+
+- Added conservative detection and removal of standalone creator handles such as `@chxrrygxg`.
+- Creator handles are highlighted in red, reported separately in the score, and removed only after the user applies the optimized prompt.
+- Email addresses and `@mentions` embedded in normal prose are left unchanged.
+
 ## 2.2.2 - 2026-08-06
 
 - Prompt optimization now preserves the user's paragraph and line-break organization.
