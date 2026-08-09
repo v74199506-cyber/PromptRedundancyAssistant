@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 - 2026-08-08
+
+- Added conservative contradiction detection for standalone hair-color and eye-color tags.
+- The optimizer keeps the first declared color and removes only the conflicting color from later tags, preserving useful details such as `long hair` or `expressive eyes`.
+- Added exceptions for `heterochromia`, multicolored hair, gradients, ombre, streaks, highlights, and colored tips.
+- Improved Caption → Tags cleanup for grammatical scaffolding such as `the character`, `identified as`, `is depicted`, `wears`, and relative clauses.
+- Added orange contradiction highlighting, dedicated suggestions, score details, and regression tests based on mixed tag/caption prompts.
+
 ## 2.2.3 - 2026-08-07
 
 - Added conservative detection and removal of standalone creator handles such as `@chxrrygxg`.

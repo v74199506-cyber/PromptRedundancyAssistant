@@ -100,7 +100,9 @@ test("Pony and Illustrious profiles preserve quality tags", () => {
 
 test("score includes an explainable breakdown", () => {
   const result = analyzePrompt("portrait, portrait, masterpiece, best quality");
-  assert.deepEqual(result.scoreBreakdown, { exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0 });
+  assert.deepEqual(result.scoreBreakdown, {
+    exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0, contradictions: 0,
+  });
   assert.equal(result.score, 32);
 });
 
@@ -154,6 +156,45 @@ test("converts caption prose into concise comma-separated tags", () => {
   assert.match(result, /black dress/);
   assert.match(result, /sitting outside in rain/);
   assert.match(result, /cinematic lighting/);
+});
+
+test("caption conversion removes prose scaffolding from character descriptions", () => {
+  const caption = "The character, identified as Taiga Aisu, is depicted in a dynamic, playful pose on the ground, wears a dark blue school uniform with a white collar and a light green ribbon tied at her neck, and has large expressive brown eyes that are looking at the viewer.";
+  const result = captionToTags(caption);
+  assert.equal(result.includes("The character"), false);
+  assert.equal(result.includes("identified as"), false);
+  assert.equal(result.includes("is depicted"), false);
+  assert.equal(result.includes("wears"), false);
+  assert.match(result, /Taiga Aisu/);
+  assert.match(result, /dynamic/);
+  assert.match(result, /dark blue school uniform/);
+  assert.match(result, /light green ribbon tied at her neck/);
+  assert.match(result, /large expressive brown eyes/);
+  assert.match(result, /looking at viewer/);
+});
+
+test("detects and resolves contradictory hair and eye colors", () => {
+  const prompt = "Moni, black hair, purple eyes\n\nbrown long hair, large expressive brown eyes, blue jacket";
+  const result = analyzePrompt(prompt);
+  assert.equal(result.contradictions.length, 2);
+  assert.deepEqual(result.contradictions.map((item) => item.label), ["hair color", "eye color"]);
+  assert.equal(result.optimizedPrompt, "Moni, black hair, purple eyes\n\nlong hair, large expressive eyes, blue jacket");
+  assert.equal(result.scoreBreakdown.contradictions, 24);
+  assert.match(result.suggestions.join(" "), /conflicting hair color/);
+});
+
+test("heterochromia and multicolored hair disable unsafe color cleanup", () => {
+  const prompt = "heterochromia, purple eyes, brown eyes, two-tone hair, black hair, brown hair";
+  const result = analyzePrompt(prompt);
+  assert.equal(result.contradictions.length, 0);
+  assert.equal(result.optimizedPrompt, prompt);
+});
+
+test("negative prompts do not auto-resolve color contradictions", () => {
+  const prompt = "black hair, brown hair, purple eyes, brown eyes";
+  const result = analyzePrompt(prompt, { promptRole: "negative" });
+  assert.equal(result.contradictions.length, 0);
+  assert.equal(result.optimizedPrompt, prompt);
 });
 
 test("format conversion preserves model-control syntax verbatim", () => {

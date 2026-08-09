@@ -82,6 +82,76 @@ function creatorHandleValue(segment) {
   return /^@[a-z0-9](?:[a-z0-9_.-]{0,62}[a-z0-9_])?$/i.test(value) ? value : "";
 }
 
+const ATTRIBUTE_COLORS = [
+  "dark brown", "light brown", "blue black", "jet black", "platinum blonde", "strawberry blonde",
+  "black", "brown", "blonde", "blond", "white", "gray", "grey", "silver", "red", "orange",
+  "yellow", "green", "blue", "purple", "pink", "cyan", "teal", "aqua", "magenta", "golden",
+];
+const ATTRIBUTE_COLOR_PATTERN = ATTRIBUTE_COLORS
+  .map((color) => color.replace(/\s+/g, "\\s+"))
+  .join("|");
+
+function attributeColorClaim(segment, index) {
+  const value = standaloneTagValue(segment).replace(/_/g, " ");
+  if (/\b(?:multicolou?red|two[- ]tone|gradient|ombr[eé]|streaks?|highlights?|colored tips?)\b/i.test(value)) return null;
+  const colors = [...value.matchAll(new RegExp(`\\b(${ATTRIBUTE_COLOR_PATTERN})\\b`, "gi"))];
+  if (colors.length !== 1) return null;
+  const color = colors[0][1].toLocaleLowerCase().replace(/\s+/g, " ");
+  const escapedColor = color.replace(/\s+/g, "\\s+");
+  const beforeNoun = new RegExp(`\\b${escapedColor}\\b(?:\\s+[\\p{L}-]+){0,3}\\s+(hair|eyes?)\\b`, "iu");
+  const afterNoun = new RegExp(`\\b(hair|eyes?)\\s+(?:is|are|colou?red)?\\s*${escapedColor}\\b`, "iu");
+  const match = value.match(beforeNoun) || value.match(afterNoun);
+  if (!match) return null;
+  const noun = match[1].toLocaleLowerCase();
+  return {
+    attribute: noun.startsWith("eye") ? "eyeColor" : "hairColor",
+    label: noun.startsWith("eye") ? "eye color" : "hair color",
+    value: color,
+    segment,
+    index,
+  };
+}
+
+function detectAttributeContradictions(segments, prompt, ignored) {
+  const seen = new Map();
+  const contradictions = [];
+  const hasHeterochromia = /\bheterochromia\b/i.test(String(prompt || ""));
+  const hasMulticolorHair = /\b(?:(?:multicolou?red|two[- ]tone|gradient|ombr[eé])\s+hair|hair\s+(?:gradient|ombr[eé]|streaks?|highlights?|with\s+colou?red\s+tips?)|colou?red\s+hair\s+tips?)\b/i.test(String(prompt || ""));
+
+  segments.forEach((segment, index) => {
+    if (ignored.has(normalizeSegment(segment)) || isProtectedControlSegment(segment)) return;
+    const claim = attributeColorClaim(segment, index);
+    if (!claim
+      || (claim.attribute === "eyeColor" && hasHeterochromia)
+      || (claim.attribute === "hairColor" && hasMulticolorHair)) return;
+    const previous = seen.get(claim.attribute);
+    if (!previous) {
+      seen.set(claim.attribute, claim);
+      return;
+    }
+    if (previous.value !== claim.value) {
+      contradictions.push({
+        attribute: claim.attribute,
+        label: claim.label,
+        kept: previous,
+        conflicting: claim,
+      });
+    }
+  });
+  return contradictions;
+}
+
+function removeConflictingColor(segment, color, attribute) {
+  if (/^\([^()]+:\s*-?\d+(?:\.\d+)?\)$/.test(String(segment || "").trim())) return "";
+  const escaped = color.replace(/\s+/g, "\\s+");
+  const cleaned = String(segment || "")
+    .replace(new RegExp(`\\b${escaped}\\b`, "iu"), "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const bareAttribute = attribute === "eyeColor" ? /^(?:eyes?|eye color)$/i : /^(?:hair|hair color)$/i;
+  return bareAttribute.test(standaloneTagValue(cleaned)) ? "" : cleaned;
+}
+
 function isProtectedControlSegment(segment) {
   const value = String(segment || "").trim();
   return /^<[^>]+>$/.test(value)
@@ -205,15 +275,18 @@ function restoreInlineSyntax(text, controls) {
 
 function cleanCaptionFragment(fragment) {
   let value = String(fragment || "").trim();
-  if (/^(?:she|he|they|it)\s+(?:is|are|has|have)$/i.test(value)) return "";
+  if (/^(?:(?:she|he|they|it)\s+(?:is|are|has|have)|(?:the\s+)?(?:subject|character|person))$/i.test(value)) return "";
   value = value
     .replace(/^(?:please\s+)?(?:create|generate|make|render|depict|show)\s+(?:an?\s+)?(?:image|picture|illustration|photo|scene)\s+(?:of|featuring|with)\s+/i, "")
     .replace(/^(?:the\s+)?(?:image|picture|illustration|photo|scene|style)\s+(?:should\s+be|is|shows?|depicts?)\s+/i, "")
     .replace(/^(?:the\s+)?(?:image|picture|illustration|photo|scene)\s+should\s+/i, "")
     .replace(/^(?:the\s+)?(?:subject|character|person)\s+(?:is|has|should\s+be)\s+/i, "")
+    .replace(/^(?:the\s+)?(?:subject|character|person)\s*[:,;-]?\s*/i, "")
+    .replace(/^identified\s+as\s+/i, "")
+    .replace(/^(?:is|are|was|were)\s+(?:depicted|shown|presented)\s*(?:in|as)?\s*/i, "")
     .replace(/^(?:she|he|they|it)\s+(?:is|are|has|have)\s+/i, "")
     .replace(/^(?:she|he|they|it)\s+/i, "")
-    .replace(/^wearing\s+(?:an?\s+)?/i, "")
+    .replace(/^(?:wearing|wears?)\s+(?:an?\s+)?/i, "")
     .replace(/^set\s+(?:the\s+scene\s+)?(?:in|with)\s+/i, "")
     .replace(/^frame\s+(?:the\s+scene\s+)?with\s+/i, "")
     .replace(/^use\s+/i, "")
@@ -236,9 +309,11 @@ export function captionToTags(prompt) {
   const { protectedText, controls } = protectInlineSyntax(source);
   const normalized = protectedText
     .replace(/\bin the style of\s+([^,.!?;]+)/gi, "$1 style")
+    .replace(/\bthat\s+(?:is|are|was|were)\b/gi, ",")
+    .replace(/\b(?:is|are|was|were)\s+(?:depicted|shown|presented)\s+(?:in|as)\b/gi, ",")
     .replace(/\b(?:while|as well as|along with|together with|but)\b/gi, ",")
     .replace(/\b(?:and|with)\b/gi, ",")
-    .replace(/\bwearing\b/gi, ",")
+    .replace(/\b(?:wears?|wearing)\b/gi, ",")
     .replace(/\b(?:there is|there are)\b/gi, ",");
   const rawFragments = normalized.split(/[,;\n]+|[.!?](?:\s+|$)/g);
   const controlsFound = [];
@@ -285,7 +360,7 @@ export function estimatePromptTokens(prompt) {
   return Math.max(wordsAndPunctuation.length, characterEstimate);
 }
 
-function optimizeSegments(segments, exact, semantic, ignored) {
+function optimizeSegments(segments, exact, semantic, contradictions, ignored) {
   const exactTerms = new Set(exact.map((item) => item.term));
   const seenExact = new Set();
   const semanticTermToGroup = new Map();
@@ -294,7 +369,10 @@ function optimizeSegments(segments, exact, semantic, ignored) {
   const removedExact = [];
   const removedSemantic = [];
   const removedCreatorTags = [];
+  const resolvedContradictions = [];
   const keptIndexes = new Set();
+  const replacements = new Map();
+  const contradictionByIndex = new Map(contradictions.map((item) => [item.conflicting.index, item]));
 
   const optimized = segments.filter((segment, index) => {
     const normalized = normalizeSegment(segment);
@@ -305,6 +383,19 @@ function optimizeSegments(segments, exact, semantic, ignored) {
     if (creatorHandleValue(segment)) {
       removedCreatorTags.push(segment);
       return false;
+    }
+    const contradiction = contradictionByIndex.get(index);
+    if (contradiction) {
+      const replacement = removeConflictingColor(
+        segment,
+        contradiction.conflicting.value,
+        contradiction.attribute,
+      );
+      resolvedContradictions.push({ ...contradiction, replacement });
+      if (!replacement) return false;
+      replacements.set(index, replacement);
+      keptIndexes.add(index);
+      return true;
     }
     if (exactTerms.has(normalized)) {
       if (seenExact.has(normalized)) {
@@ -327,7 +418,15 @@ function optimizeSegments(segments, exact, semantic, ignored) {
     return true;
   });
 
-  return { optimized, keptIndexes, removedExact, removedSemantic, removedCreatorTags };
+  return {
+    optimized,
+    keptIndexes,
+    replacements,
+    removedExact,
+    removedSemantic,
+    removedCreatorTags,
+    resolvedContradictions,
+  };
 }
 
 function splitTopLevelParagraphs(prompt) {
@@ -359,12 +458,12 @@ function splitTopLevelParagraphs(prompt) {
   return paragraphs;
 }
 
-function rebuildOptimizedPrompt(prompt, keptIndexes) {
+function rebuildOptimizedPrompt(prompt, keptIndexes, replacements = new Map()) {
   let segmentIndex = 0;
   return splitTopLevelParagraphs(prompt).map(({ text, lineBreak }) => {
     const kept = [];
     splitPromptSegments(text).forEach((segment) => {
-      if (keptIndexes.has(segmentIndex)) kept.push(segment);
+      if (keptIndexes.has(segmentIndex)) kept.push(replacements.get(segmentIndex) || segment);
       segmentIndex += 1;
     });
     return `${kept.join(", ")}${lineBreak}`;
@@ -415,9 +514,10 @@ export function analyzePrompt(prompt, options = {}) {
     .filter((segment) => !ignored.has(normalizeSegment(segment)))
     .map(creatorHandleValue)
     .filter(Boolean);
+  const contradictions = role === "negative" ? [] : detectAttributeContradictions(segments, prompt, ignored);
 
-  const optimization = optimizeSegments(segments, exact, semantic, ignored);
-  const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes);
+  const optimization = optimizeSegments(segments, exact, semantic, contradictions, ignored);
+  const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes, optimization.replacements);
   const duplicateInstances = exact.reduce((total, item) => total + item.count - 1, 0);
   const semanticExcess = semantic.reduce((total, item) => total + item.terms.length - 1, 0);
   const wordExcess = repeatedWords.reduce((total, item) => total + item.count - minimumWordRepetitions + 1, 0);
@@ -426,6 +526,7 @@ export function analyzePrompt(prompt, options = {}) {
     semantic: semanticExcess * 12,
     repeatedWords: wordExcess * 3,
     creatorTags: creatorTags.length * 10,
+    contradictions: contradictions.length * 12,
   };
   const score = Math.min(100, Object.values(scoreBreakdown).reduce((total, value) => total + value, 0));
   const tokenEstimate = estimatePromptTokens(prompt);
@@ -433,6 +534,9 @@ export function analyzePrompt(prompt, options = {}) {
   const suggestions = [];
   if (exact.length) suggestions.push("Remove later copies of identical top-level concepts.");
   if (creatorTags.length) suggestions.push(`Remove standalone creator handles: ${creatorTags.join(", ")}.`);
+  contradictions.forEach(({ label, kept, conflicting }) => {
+    suggestions.push(`Resolve conflicting ${label}: keep "${kept.value}" from "${kept.segment}" and remove "${conflicting.value}" from "${conflicting.segment}".`);
+  });
   semantic.forEach(({ group, terms }) => suggestions.push(`Choose one strong ${group} term instead of: ${terms.join(", ")}.`));
   if (segments.length > 35) suggestions.push("Shorten the prompt and prioritize subject, composition, lighting, and style.");
   if (!suggestions.length && repeatedWords.length) suggestions.push("Review repeated words and keep them only when repetition adds meaning.");
@@ -453,11 +557,13 @@ export function analyzePrompt(prompt, options = {}) {
     semantic,
     repeatedWords,
     creatorTags,
+    contradictions,
     cleanedPrompt: optimizedPrompt,
     optimizedPrompt,
     removedExact: optimization.removedExact,
     removedSemantic: optimization.removedSemantic,
     removedCreatorTags: optimization.removedCreatorTags,
+    resolvedContradictions: optimization.resolvedContradictions,
     score,
     scoreBreakdown,
     tokenEstimate,
@@ -481,12 +587,17 @@ export function highlightedPromptHtml(prompt, analysis) {
   const semanticTerms = new Set(analysis.semantic.flatMap((item) => item.terms));
   const repeatedWords = new Set(analysis.repeatedWords.map((item) => item.word));
   const creatorTags = new Set((analysis.creatorTags || []).map(normalizeSegment));
+  const contradictionTerms = new Set((analysis.contradictions || []).flatMap(({ kept, conflicting }) => [
+    normalizeSegment(kept.segment),
+    normalizeSegment(conflicting.segment),
+  ]));
   const parts = String(prompt || "").split(/([,;\n]+)/);
 
   return parts.map((part, index) => {
     if (index % 2 === 1) return escapeHtml(part);
     const normalized = normalizeSegment(part);
     if (creatorTags.has(standaloneTagValue(part))) return `<mark class="pra-creator">${escapeHtml(part)}</mark>`;
+    if (contradictionTerms.has(normalized)) return `<mark class="pra-conflict">${escapeHtml(part)}</mark>`;
     if (normalized && exactTerms.has(normalized)) return `<mark class="pra-exact">${escapeHtml(part)}</mark>`;
     if ([...semanticTerms].some((term) => phraseIsPresent(normalized, term))) {
       return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;
