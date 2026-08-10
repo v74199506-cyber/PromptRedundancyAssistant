@@ -101,7 +101,7 @@ test("Pony and Illustrious profiles preserve quality tags", () => {
 test("score includes an explainable breakdown", () => {
   const result = analyzePrompt("portrait, portrait, masterpiece, best quality");
   assert.deepEqual(result.scoreBreakdown, {
-    exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0, contradictions: 0,
+    exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0, contradictions: 0, specificity: 0,
   });
   assert.equal(result.score, 32);
 });
@@ -195,6 +195,46 @@ test("negative prompts do not auto-resolve color contradictions", () => {
   const result = analyzePrompt(prompt, { promptRole: "negative" });
   assert.equal(result.contradictions.length, 0);
   assert.equal(result.optimizedPrompt, prompt);
+});
+
+test("removes generic tags covered by richer appearance and clothing tags", () => {
+  const prompt = [
+    "very long black hair, black hair, long hair",
+    "cow print, cow print bikini, print bikini",
+    "animal ears, fake animal ears, collar, animal collar",
+    "holding bucket, bucket, waving bucket",
+  ].join(", ");
+  const result = analyzePrompt(prompt);
+  assert.equal(result.optimizedPrompt, [
+    "very long black hair",
+    "cow print bikini",
+    "fake animal ears, animal collar",
+    "holding bucket, waving bucket",
+  ].join(", "));
+  assert.deepEqual(
+    result.subsumed.map(({ generic }) => generic.segment),
+    ["black hair", "long hair", "cow print", "print bikini", "animal ears", "collar", "bucket"],
+  );
+});
+
+test("does not collapse distinct action phrases sharing the same object", () => {
+  const result = analyzePrompt("holding bucket, waving bucket, kicking bucket");
+  assert.deepEqual(result.subsumed, []);
+  assert.equal(result.optimizedPrompt, "holding bucket, waving bucket, kicking bucket");
+});
+
+test("tag prompts use a higher repeated-word threshold for structural nouns", () => {
+  const result = analyzePrompt("cow print bikini, cow ears, cow horns, cow girl");
+  assert.equal(result.promptFormat, "tags");
+  assert.equal(result.repeatedWordThreshold, 5);
+  assert.deepEqual(result.repeatedWords, []);
+});
+
+test("caption prompts retain the configured repeated-word threshold", () => {
+  const result = analyzePrompt("The rain falls softly. The rain covers the street. The rain reflects the lights.");
+  assert.equal(result.promptFormat, "caption");
+  assert.equal(result.repeatedWordThreshold, 3);
+  assert.equal(result.repeatedWords.some(({ word }) => word === "rain"), true);
 });
 
 test("format conversion preserves model-control syntax verbatim", () => {

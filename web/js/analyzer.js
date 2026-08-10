@@ -360,7 +360,56 @@ export function estimatePromptTokens(prompt) {
   return Math.max(wordsAndPunctuation.length, characterEstimate);
 }
 
-function optimizeSegments(segments, exact, semantic, contradictions, ignored) {
+const SUBSUMABLE_SINGLE_TAGS = new Set([
+  "hair", "eyes", "ears", "collar", "choker", "dress", "shirt", "skirt", "jacket", "uniform",
+  "bikini", "swimsuit", "socks", "shoes", "boots", "gloves", "stockings", "thighhighs", "horns",
+  "breasts", "thighs", "hips", "waist", "ribbon", "headband", "hairband", "bucket", "bell", "print",
+]);
+
+function specificityTokens(segment) {
+  const value = standaloneTagValue(segment).replace(/_/g, " ");
+  if (!value || isProtectedControlSegment(segment) || creatorHandleValue(segment)) return [];
+  return value.match(/[\p{L}\p{N}'-]+/gu) || [];
+}
+
+function isSubsumableDescription(segment, tokens) {
+  if (!tokens.length || tokens.length > 7) return false;
+  const value = standaloneTagValue(segment).replace(/_/g, " ");
+  if (/\b(?:no|not|without|except|and|or)\b/i.test(value)) return false;
+  if (tokens.length === 1) return SUBSUMABLE_SINGLE_TAGS.has(tokens[0]);
+  if (CONVERTER_CATEGORIES.poseAction.test(value) || CONVERTER_CATEGORIES.camera.test(value)) return false;
+  return CONVERTER_CATEGORIES.appearance.test(value)
+    || CONVERTER_CATEGORIES.clothing.test(value)
+    || /\b(?:print|pattern|plaid|striped|spotted|floral)\b/i.test(value);
+}
+
+function detectSubsumedDescriptions(segments, ignored) {
+  const entries = segments.map((segment, index) => {
+    const tokens = specificityTokens(segment);
+    return {
+      segment,
+      index,
+      tokens,
+      tokenSet: new Set(tokens),
+      eligible: !ignored.has(normalizeSegment(segment)) && isSubsumableDescription(segment, tokens),
+    };
+  });
+  const subsumed = [];
+
+  entries.forEach((generic) => {
+    if (!generic.eligible) return;
+    const richer = entries
+      .filter((specific) => specific.index !== generic.index
+        && specific.tokens.length > generic.tokens.length
+        && specific.tokens.length <= 8
+        && generic.tokens.every((token) => specific.tokenSet.has(token)))
+      .sort((left, right) => right.tokens.length - left.tokens.length || left.index - right.index)[0];
+    if (richer) subsumed.push({ generic, specific: richer });
+  });
+  return subsumed;
+}
+
+function optimizeSegments(segments, exact, semantic, contradictions, subsumed, ignored) {
   const exactTerms = new Set(exact.map((item) => item.term));
   const seenExact = new Set();
   const semanticTermToGroup = new Map();
@@ -370,9 +419,11 @@ function optimizeSegments(segments, exact, semantic, contradictions, ignored) {
   const removedSemantic = [];
   const removedCreatorTags = [];
   const resolvedContradictions = [];
+  const removedSubsumed = [];
   const keptIndexes = new Set();
   const replacements = new Map();
   const contradictionByIndex = new Map(contradictions.map((item) => [item.conflicting.index, item]));
+  const subsumedByIndex = new Map(subsumed.map((item) => [item.generic.index, item]));
 
   const optimized = segments.filter((segment, index) => {
     const normalized = normalizeSegment(segment);
@@ -382,6 +433,11 @@ function optimizeSegments(segments, exact, semantic, contradictions, ignored) {
     }
     if (creatorHandleValue(segment)) {
       removedCreatorTags.push(segment);
+      return false;
+    }
+    const specificityOverlap = subsumedByIndex.get(index);
+    if (specificityOverlap) {
+      removedSubsumed.push(specificityOverlap);
       return false;
     }
     const contradiction = contradictionByIndex.get(index);
@@ -425,6 +481,7 @@ function optimizeSegments(segments, exact, semantic, contradictions, ignored) {
     removedExact,
     removedSemantic,
     removedCreatorTags,
+    removedSubsumed,
     resolvedContradictions,
   };
 }
@@ -472,6 +529,9 @@ function rebuildOptimizedPrompt(prompt, keptIndexes, replacements = new Map()) {
 
 export function analyzePrompt(prompt, options = {}) {
   const minimumWordRepetitions = Number(options.minimumWordRepetitions || 3);
+  const promptFormat = detectPromptFormat(prompt);
+  const repeatedWordThreshold = minimumWordRepetitions
+    + (promptFormat === "tags" ? 2 : promptFormat === "mixed" ? 1 : 0);
   const checkSemanticOverlap = options.checkSemanticOverlap !== false;
   const profileKey = normalizedProfile(options.modelProfile);
   const profile = MODEL_PROFILES[profileKey];
@@ -507,7 +567,7 @@ export function analyzePrompt(prompt, options = {}) {
     }
   });
   const repeatedWords = [...wordCounts.entries()]
-    .filter(([, count]) => count >= minimumWordRepetitions)
+    .filter(([, count]) => count >= repeatedWordThreshold)
     .sort((a, b) => b[1] - a[1])
     .map(([word, count]) => ({ word, count }));
   const creatorTags = segments
@@ -515,18 +575,20 @@ export function analyzePrompt(prompt, options = {}) {
     .map(creatorHandleValue)
     .filter(Boolean);
   const contradictions = role === "negative" ? [] : detectAttributeContradictions(segments, prompt, ignored);
+  const subsumed = role === "negative" ? [] : detectSubsumedDescriptions(segments, ignored);
 
-  const optimization = optimizeSegments(segments, exact, semantic, contradictions, ignored);
+  const optimization = optimizeSegments(segments, exact, semantic, contradictions, subsumed, ignored);
   const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes, optimization.replacements);
   const duplicateInstances = exact.reduce((total, item) => total + item.count - 1, 0);
   const semanticExcess = semantic.reduce((total, item) => total + item.terms.length - 1, 0);
-  const wordExcess = repeatedWords.reduce((total, item) => total + item.count - minimumWordRepetitions + 1, 0);
+  const wordExcess = repeatedWords.reduce((total, item) => total + item.count - repeatedWordThreshold + 1, 0);
   const scoreBreakdown = {
     exact: duplicateInstances * 20,
     semantic: semanticExcess * 12,
     repeatedWords: wordExcess * 3,
     creatorTags: creatorTags.length * 10,
     contradictions: contradictions.length * 12,
+    specificity: subsumed.length * 6,
   };
   const score = Math.min(100, Object.values(scoreBreakdown).reduce((total, value) => total + value, 0));
   const tokenEstimate = estimatePromptTokens(prompt);
@@ -537,6 +599,9 @@ export function analyzePrompt(prompt, options = {}) {
   contradictions.forEach(({ label, kept, conflicting }) => {
     suggestions.push(`Resolve conflicting ${label}: keep "${kept.value}" from "${kept.segment}" and remove "${conflicting.value}" from "${conflicting.segment}".`);
   });
+  if (subsumed.length) {
+    suggestions.push(`Remove generic tags already covered by more specific descriptions: ${subsumed.map(({ generic }) => generic.segment).join(", ")}.`);
+  }
   semantic.forEach(({ group, terms }) => suggestions.push(`Choose one strong ${group} term instead of: ${terms.join(", ")}.`));
   if (segments.length > 35) suggestions.push("Shorten the prompt and prioritize subject, composition, lighting, and style.");
   if (!suggestions.length && repeatedWords.length) suggestions.push("Review repeated words and keep them only when repetition adds meaning.");
@@ -558,11 +623,13 @@ export function analyzePrompt(prompt, options = {}) {
     repeatedWords,
     creatorTags,
     contradictions,
+    subsumed,
     cleanedPrompt: optimizedPrompt,
     optimizedPrompt,
     removedExact: optimization.removedExact,
     removedSemantic: optimization.removedSemantic,
     removedCreatorTags: optimization.removedCreatorTags,
+    removedSubsumed: optimization.removedSubsumed,
     resolvedContradictions: optimization.resolvedContradictions,
     score,
     scoreBreakdown,
@@ -571,6 +638,8 @@ export function analyzePrompt(prompt, options = {}) {
     profile: profileKey,
     profileLabel: profile.label,
     promptRole: role,
+    promptFormat,
+    repeatedWordThreshold,
     suggestions,
     hasIssues: score > 0,
   };
@@ -591,6 +660,7 @@ export function highlightedPromptHtml(prompt, analysis) {
     normalizeSegment(kept.segment),
     normalizeSegment(conflicting.segment),
   ]));
+  const subsumedTerms = new Set((analysis.subsumed || []).map(({ generic }) => normalizeSegment(generic.segment)));
   const parts = String(prompt || "").split(/([,;\n]+)/);
 
   return parts.map((part, index) => {
@@ -598,6 +668,7 @@ export function highlightedPromptHtml(prompt, analysis) {
     const normalized = normalizeSegment(part);
     if (creatorTags.has(standaloneTagValue(part))) return `<mark class="pra-creator">${escapeHtml(part)}</mark>`;
     if (contradictionTerms.has(normalized)) return `<mark class="pra-conflict">${escapeHtml(part)}</mark>`;
+    if (subsumedTerms.has(normalized)) return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;
     if (normalized && exactTerms.has(normalized)) return `<mark class="pra-exact">${escapeHtml(part)}</mark>`;
     if ([...semanticTerms].some((term) => phraseIsPresent(normalized, term))) {
       return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;

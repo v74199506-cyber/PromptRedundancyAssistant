@@ -14,6 +14,7 @@ There are no API calls, telemetry, model downloads, visible workflow nodes, or t
 - Preserves paragraph organization when applying an optimized prompt.
 - Detects and removes standalone creator handles such as `@chxrrygxg` while leaving emails and prose mentions untouched.
 - Detects contradictory standalone hair and eye colors, keeps the first declaration, and removes only the conflicting color from later tags.
+- Removes generic appearance, clothing, and pattern tags when a richer tag already contains the same concepts.
 - Converts tag lists into compact natural-language captions and captions back into concise tags.
 - Detects the current prompt format and always previews a conversion before applying it.
 - Keeps up to ten previous applied values per prompt field for the current browser session.
@@ -115,6 +116,7 @@ The displayed value is a **redundancy score**, not an image-quality score:
 - 3 points per repeated-word excess above the configured threshold.
 - 10 points per standalone creator handle.
 - 12 points per detected attribute contradiction.
+- 6 points per generic tag subsumed by a more specific description.
 - Total capped at 100.
 
 A score of zero means only that no configured redundancy rule fired. It does not guarantee a better prompt or image.
@@ -139,6 +141,8 @@ Duplicate protected control segments are reported conservatively or left unchang
 - Semantic groups are small, static English dictionaries. Add legitimate trigger words to the ignored-term setting when necessary.
 - Tags/caption conversion is heuristic and English-oriented. It reorganizes prompt concepts but does not replace an LLM translator or guarantee identical model output.
 - Contradiction cleanup is deliberately limited to clear standalone hair-color and eye-color tags. Heterochromia and explicit multicolor-hair terms disable the corresponding automatic cleanup.
+- Specificity cleanup is limited to short appearance, clothing, pattern, and selected generic-object tags; distinct action phrases are retained.
+- Repeated-word thresholds are format-aware. Tag lists add two occurrences to the configured threshold, mixed prompts add one, and captions use the configured value directly.
 - The token count is a rough cross-tokenizer estimate. The tokenizer used by the selected model is authoritative.
 - Model profiles are selected manually and do not inspect checkpoint internals.
 - Repetition may be intentional. The checkpoint or LoRA author's recommendations take priority.

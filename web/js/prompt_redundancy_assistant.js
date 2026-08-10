@@ -213,6 +213,7 @@ function showPanel(context, statusMessage = "") {
       <span class="pra-metric">words ${analysis.scoreBreakdown.repeatedWords}</span>
       <span class="pra-metric">creator ${analysis.scoreBreakdown.creatorTags}</span>
       <span class="pra-metric">conflict ${analysis.scoreBreakdown.contradictions}</span>
+      <span class="pra-metric">specificity ${analysis.scoreBreakdown.specificity}</span>
       ${showTokenInfo ? `<span class="pra-metric ${tokenWarning ? "pra-warning" : ""}" title="Rough estimate; the model tokenizer is authoritative">~${analysis.tokenEstimate} tokens</span>` : ""}
     </div>
     <div class="pra-preview">${highlightedPromptHtml(analysis.prompt, analysis)}</div>

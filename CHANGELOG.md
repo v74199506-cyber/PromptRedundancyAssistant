@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.1 - 2026-08-09
+
+- Added a conservative specificity pass for generic tags already contained in richer appearance, clothing, or pattern descriptions.
+- Examples include `black hair` beside `very long black hair`, `cow print` beside `cow print bikini`, and `animal ears` beside `fake animal ears`.
+- Keeps distinct action phrases such as `holding bucket` and `waving bucket` while removing a redundant standalone `bucket` tag.
+- Made repeated-word warnings format-aware: tag lists require two additional occurrences, reducing false positives for thematic nouns reused across distinct tags.
+- Added specificity suggestions, score details, highlighting, and regression tests.
+
 ## 2.3.0 - 2026-08-08
 
 - Added conservative contradiction detection for standalone hair-color and eye-color tags.
