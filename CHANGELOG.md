@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0 - 2026-08-11
+
+- Added a reviewed prompt-alias dictionary for clear semantic equivalents such as face-appeal tags, composition adjectives, blurred backgrounds, line removal, and depth of field.
+- Added semantic cleanup inside nested parenthesis groups while preserving their original nesting and prompt weights.
+- Normalizes spaces and underscores for alias matching without rewriting unaffected tags.
+- Preserves distinct lighting techniques such as rim, ambient, torch, focused, and volumetric light.
+- Stops treating the structural words `light` and `lighting` as ordinary repeated-word problems; known lighting aliases remain covered by semantic rules.
+- Audited the local pysssss autocomplete vocabulary for real tag spellings; the external 100,000-entry list is not bundled or copied.
+
 ## 2.3.1 - 2026-08-09
 
 - Added a conservative specificity pass for generic tags already contained in richer appearance, clothing, or pattern descriptions.

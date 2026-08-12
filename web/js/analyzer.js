@@ -7,6 +7,30 @@ export const SEMANTIC_GROUPS = {
   lighting: ["cinematic lighting", "dramatic lighting", "movie lighting", "studio lighting"],
 };
 
+export const PROMPT_ALIAS_GROUPS = {
+  faceAppeal: {
+    label: "face appeal",
+    terms: ["beautiful face", "pretty face", "cute face", "kawaii"],
+  },
+  compositionStyle: {
+    label: "composition style",
+    terms: ["cinematic composition", "epic composition", "amazing composition"],
+  },
+  backgroundBlur: {
+    label: "background blur",
+    terms: ["blurred background", "blurry background"],
+  },
+  lineRemoval: {
+    label: "line removal",
+    terms: ["no lineart", "no outline"],
+  },
+  depthOfField: {
+    label: "depth of field",
+    terms: ["depth of field", "shallow depth of field"],
+    preferMostSpecific: true,
+  },
+};
+
 export const MODEL_PROFILES = {
   general: { label: "General", tokenWarning: 77, excludedGroups: [] },
   sdxl: { label: "SDXL", tokenWarning: 77, excludedGroups: [] },
@@ -17,6 +41,7 @@ export const MODEL_PROFILES = {
 
 const STOP_WORDS = new Set([
   "a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with", "without",
+  "light", "lighting",
   "de", "da", "do", "das", "dos", "e", "em", "na", "no", "nas", "nos", "para", "por", "um", "uma", "com", "sem",
 ]);
 
@@ -41,6 +66,84 @@ export function normalizeSegment(value) {
 function phraseIsPresent(text, phrase) {
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^\\p{L}\\p{N}_])${escaped}($|[^\\p{L}\\p{N}_])`, "iu").test(text);
+}
+
+function semanticTagValue(segment) {
+  return standaloneTagValue(segment).replace(/_/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function matchingOuterParenthesis(value) {
+  if (!value.startsWith("(")) return -1;
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "(") depth += 1;
+    else if (value[index] === ")") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function atomicTagsForSegment(segment, segmentIndex) {
+  let inner = String(segment || "").trim();
+  let prefix = "";
+  let suffix = "";
+  while (inner.startsWith("(") && matchingOuterParenthesis(inner) === inner.length - 1) {
+    prefix += "(";
+    suffix = `)${suffix}`;
+    inner = inner.slice(1, -1).trim();
+  }
+  if (!prefix || /:\s*-?\d+(?:\.\d+)?$/.test(inner)) {
+    return { compound: false, prefix: "", suffix: "", atoms: [{ raw: segment, value: semanticTagValue(segment), segmentIndex, atomIndex: 0 }] };
+  }
+  const parts = splitPromptSegments(inner);
+  if (parts.length < 2) {
+    return { compound: false, prefix: "", suffix: "", atoms: [{ raw: segment, value: semanticTagValue(segment), segmentIndex, atomIndex: 0 }] };
+  }
+  return {
+    compound: true,
+    prefix,
+    suffix,
+    atoms: parts.map((raw, atomIndex) => ({ raw, value: semanticTagValue(raw), segmentIndex, atomIndex })),
+  };
+}
+
+function detectPromptAliasOverlaps(segments, ignored) {
+  const containers = segments.map(atomicTagsForSegment);
+  const atoms = containers.flatMap((container) => container.atoms)
+    .filter((atom) => atom.value && !ignored.has(normalizeSegment(atom.raw)));
+  const overlaps = [];
+  const removedAtoms = new Map();
+
+  Object.entries(PROMPT_ALIAS_GROUPS).forEach(([group, config]) => {
+    const termSet = new Set(config.terms);
+    const matches = atoms.filter((atom) => termSet.has(atom.value));
+    if (matches.length < 2) return;
+    const kept = config.preferMostSpecific
+      ? [...matches].sort((left, right) => right.value.split(/\s+/).length - left.value.split(/\s+/).length || left.segmentIndex - right.segmentIndex)[0]
+      : matches[0];
+    matches.filter((match) => match !== kept).forEach((removed) => {
+      overlaps.push({ group, label: config.label, kept, removed });
+      const indexes = removedAtoms.get(removed.segmentIndex) || new Set();
+      indexes.add(removed.atomIndex);
+      removedAtoms.set(removed.segmentIndex, indexes);
+    });
+  });
+
+  const replacements = new Map();
+  const removedSegments = new Set();
+  removedAtoms.forEach((atomIndexes, segmentIndex) => {
+    const container = containers[segmentIndex];
+    if (!container.compound) {
+      removedSegments.add(segmentIndex);
+      return;
+    }
+    const keptAtoms = container.atoms.filter((atom) => !atomIndexes.has(atom.atomIndex));
+    if (!keptAtoms.length) removedSegments.add(segmentIndex);
+    else replacements.set(segmentIndex, `${container.prefix}${keptAtoms.map((atom) => atom.raw).join(", ")}${container.suffix}`);
+  });
+  return { overlaps, replacements, removedSegments };
 }
 
 /** Split only on top-level separators so ComfyUI weights, wildcards and LoRA syntax survive unchanged. */
@@ -409,7 +512,7 @@ function detectSubsumedDescriptions(segments, ignored) {
   return subsumed;
 }
 
-function optimizeSegments(segments, exact, semantic, contradictions, subsumed, ignored) {
+function optimizeSegments(segments, exact, semantic, contradictions, subsumed, aliases, ignored) {
   const exactTerms = new Set(exact.map((item) => item.term));
   const seenExact = new Set();
   const semanticTermToGroup = new Map();
@@ -420,6 +523,7 @@ function optimizeSegments(segments, exact, semantic, contradictions, subsumed, i
   const removedCreatorTags = [];
   const resolvedContradictions = [];
   const removedSubsumed = [];
+  const removedAliases = [];
   const keptIndexes = new Set();
   const replacements = new Map();
   const contradictionByIndex = new Map(contradictions.map((item) => [item.conflicting.index, item]));
@@ -433,6 +537,10 @@ function optimizeSegments(segments, exact, semantic, contradictions, subsumed, i
     }
     if (creatorHandleValue(segment)) {
       removedCreatorTags.push(segment);
+      return false;
+    }
+    if (aliases.removedSegments.has(index)) {
+      removedAliases.push(...aliases.overlaps.filter(({ removed }) => removed.segmentIndex === index));
       return false;
     }
     const specificityOverlap = subsumedByIndex.get(index);
@@ -470,6 +578,10 @@ function optimizeSegments(segments, exact, semantic, contradictions, subsumed, i
       }
       keptSemanticGroups.add(group);
     }
+    if (aliases.replacements.has(index)) {
+      replacements.set(index, aliases.replacements.get(index));
+      removedAliases.push(...aliases.overlaps.filter(({ removed }) => removed.segmentIndex === index));
+    }
     keptIndexes.add(index);
     return true;
   });
@@ -482,6 +594,7 @@ function optimizeSegments(segments, exact, semantic, contradictions, subsumed, i
     removedSemantic,
     removedCreatorTags,
     removedSubsumed,
+    removedAliases,
     resolvedContradictions,
   };
 }
@@ -576,8 +689,10 @@ export function analyzePrompt(prompt, options = {}) {
     .filter(Boolean);
   const contradictions = role === "negative" ? [] : detectAttributeContradictions(segments, prompt, ignored);
   const subsumed = role === "negative" ? [] : detectSubsumedDescriptions(segments, ignored);
+  const aliases = role === "negative" || !checkSemanticOverlap ? { overlaps: [], replacements: new Map(), removedSegments: new Set() }
+    : detectPromptAliasOverlaps(segments, ignored);
 
-  const optimization = optimizeSegments(segments, exact, semantic, contradictions, subsumed, ignored);
+  const optimization = optimizeSegments(segments, exact, semantic, contradictions, subsumed, aliases, ignored);
   const optimizedPrompt = rebuildOptimizedPrompt(prompt, optimization.keptIndexes, optimization.replacements);
   const duplicateInstances = exact.reduce((total, item) => total + item.count - 1, 0);
   const semanticExcess = semantic.reduce((total, item) => total + item.terms.length - 1, 0);
@@ -589,6 +704,7 @@ export function analyzePrompt(prompt, options = {}) {
     creatorTags: creatorTags.length * 10,
     contradictions: contradictions.length * 12,
     specificity: subsumed.length * 6,
+    aliases: aliases.overlaps.length * 6,
   };
   const score = Math.min(100, Object.values(scoreBreakdown).reduce((total, value) => total + value, 0));
   const tokenEstimate = estimatePromptTokens(prompt);
@@ -601,6 +717,9 @@ export function analyzePrompt(prompt, options = {}) {
   });
   if (subsumed.length) {
     suggestions.push(`Remove generic tags already covered by more specific descriptions: ${subsumed.map(({ generic }) => generic.segment).join(", ")}.`);
+  }
+  if (aliases.overlaps.length) {
+    suggestions.push(`Remove overlapping prompt aliases: ${aliases.overlaps.map(({ removed, kept }) => `"${removed.raw}" (covered by "${kept.raw}")`).join(", ")}.`);
   }
   semantic.forEach(({ group, terms }) => suggestions.push(`Choose one strong ${group} term instead of: ${terms.join(", ")}.`));
   if (segments.length > 35) suggestions.push("Shorten the prompt and prioritize subject, composition, lighting, and style.");
@@ -624,12 +743,14 @@ export function analyzePrompt(prompt, options = {}) {
     creatorTags,
     contradictions,
     subsumed,
+    aliasOverlaps: aliases.overlaps,
     cleanedPrompt: optimizedPrompt,
     optimizedPrompt,
     removedExact: optimization.removedExact,
     removedSemantic: optimization.removedSemantic,
     removedCreatorTags: optimization.removedCreatorTags,
     removedSubsumed: optimization.removedSubsumed,
+    removedAliases: optimization.removedAliases,
     resolvedContradictions: optimization.resolvedContradictions,
     score,
     scoreBreakdown,
@@ -661,6 +782,9 @@ export function highlightedPromptHtml(prompt, analysis) {
     normalizeSegment(conflicting.segment),
   ]));
   const subsumedTerms = new Set((analysis.subsumed || []).map(({ generic }) => normalizeSegment(generic.segment)));
+  const aliasTerms = new Set((analysis.aliasOverlaps || []).flatMap(({ kept, removed }) => [
+    normalizeSegment(kept.raw), normalizeSegment(removed.raw),
+  ]));
   const parts = String(prompt || "").split(/([,;\n]+)/);
 
   return parts.map((part, index) => {
@@ -669,6 +793,9 @@ export function highlightedPromptHtml(prompt, analysis) {
     if (creatorTags.has(standaloneTagValue(part))) return `<mark class="pra-creator">${escapeHtml(part)}</mark>`;
     if (contradictionTerms.has(normalized)) return `<mark class="pra-conflict">${escapeHtml(part)}</mark>`;
     if (subsumedTerms.has(normalized)) return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;
+    if ([...aliasTerms].some((term) => phraseIsPresent(normalized.replace(/_/g, " "), term.replace(/_/g, " ")))) {
+      return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;
+    }
     if (normalized && exactTerms.has(normalized)) return `<mark class="pra-exact">${escapeHtml(part)}</mark>`;
     if ([...semanticTerms].some((term) => phraseIsPresent(normalized, term))) {
       return `<mark class="pra-semantic">${escapeHtml(part)}</mark>`;

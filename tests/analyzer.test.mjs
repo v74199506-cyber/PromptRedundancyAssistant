@@ -101,7 +101,7 @@ test("Pony and Illustrious profiles preserve quality tags", () => {
 test("score includes an explainable breakdown", () => {
   const result = analyzePrompt("portrait, portrait, masterpiece, best quality");
   assert.deepEqual(result.scoreBreakdown, {
-    exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0, contradictions: 0, specificity: 0,
+    exact: 20, semantic: 12, repeatedWords: 0, creatorTags: 0, contradictions: 0, specificity: 0, aliases: 0,
   });
   assert.equal(result.score, 32);
 });
@@ -235,6 +235,38 @@ test("caption prompts retain the configured repeated-word threshold", () => {
   assert.equal(result.promptFormat, "caption");
   assert.equal(result.repeatedWordThreshold, 3);
   assert.equal(result.repeatedWords.some(({ word }) => word === "rain"), true);
+});
+
+test("removes known semantic aliases inside nested parenthesis groups", () => {
+  const prompt = "(((Beautiful face, pretty face, kawaii, cute face))), ((cinematic composition, epic composition)), amazing composition";
+  const result = analyzePrompt(prompt);
+  assert.equal(result.optimizedPrompt, "(((Beautiful face))), ((cinematic composition))");
+  assert.deepEqual(
+    result.aliasOverlaps.map(({ removed }) => removed.value),
+    ["pretty face", "kawaii", "cute face", "epic composition", "amazing composition"],
+  );
+});
+
+test("normalizes underscores and preserves the preferred specific alias", () => {
+  const prompt = "blurred_background, blurry background, depth_of_field, shallow depth of field, (no lineart:1), (no outline:1)";
+  const result = analyzePrompt(prompt);
+  assert.equal(result.optimizedPrompt, "blurred_background, shallow depth of field, (no lineart:1)");
+  assert.equal(result.scoreBreakdown.aliases, 18);
+});
+
+test("keeps distinct lighting techniques even when they share light words", () => {
+  const prompt = "rim light, ambient light, torchlight, volumetric light, soft reflections";
+  const result = analyzePrompt(prompt);
+  assert.deepEqual(result.aliasOverlaps, []);
+  assert.deepEqual(result.repeatedWords, []);
+  assert.equal(result.optimizedPrompt, prompt);
+});
+
+test("semantic alias cleanup follows the semantic-overlap setting", () => {
+  const prompt = "beautiful face, pretty face, blurred background, blurry background";
+  const result = analyzePrompt(prompt, { checkSemanticOverlap: false });
+  assert.deepEqual(result.aliasOverlaps, []);
+  assert.equal(result.optimizedPrompt, prompt);
 });
 
 test("format conversion preserves model-control syntax verbatim", () => {
